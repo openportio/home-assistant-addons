@@ -95,6 +95,36 @@ Enable debug logging of the openport client.
 - `ip_link_protection` adds a shared-secret gate in front of everything, at
   the cost of app compatibility.
 
+## Trust model
+
+Be aware of what the tunnel can and cannot see:
+
+- The public `https://<xxxxx>.u.openport.io` endpoint terminates TLS on the
+  openport servers. The last hop to your Home Assistant travels through the
+  encrypted tunnel, but the openport server sits in the middle of the
+  connection and could technically read the traffic, including login
+  credentials. Every hosted tunnel that presents a valid certificate on your
+  behalf (Home Assistant Cloud, Cloudflare Tunnel) is in the same position;
+  it is inherent to how these services work, not specific to openport.
+- The [openport client is open source](https://github.com/openportio/openport-go).
+  The server side is not.
+
+If you want end-to-end encryption, where the tunnel only relays bytes it
+cannot decrypt, the openport client also supports plain port forwarding:
+
+1. Configure Home Assistant itself for TLS (`http.ssl_certificate` and
+   `http.ssl_key` in `configuration.yaml`, or the NGINX SSL proxy app).
+2. Forward that TLS port with the
+   [standalone openport client](https://openport.io/download) in its default
+   mode (without `--http-forward`). You then connect to an address like
+   `openport.io:<port>`, and only your Home Assistant can decrypt the
+   traffic. Expect a certificate warning unless your certificate covers the
+   name you connect to.
+
+This add-on always uses http-forward mode: that is what provides the stable
+`u.openport.io` address and working WebSockets without any TLS setup on your
+side.
+
 ## Troubleshooting
 
 - **The log says the key registration failed**: check that the token was
