@@ -67,100 +67,136 @@ if bashio::config.has_value 'ip_link_protection'; then
     fi
 fi
 
+CUSTOM_DOMAIN=""
+if bashio::config.has_value 'custom_domain'; then
+    CUSTOM_DOMAIN="$(bashio::config 'custom_domain')"
+fi
+
 # ---------------------------------------------------------------------------
-# Custom domain / end-to-end encryption.
+# Supervisor.
 #
-# With a custom domain the add-on terminates TLS itself (Let's Encrypt),
-# instead of on the openport servers, so the tunnel only relays bytes it
-# cannot decrypt. That needs a CNAME from your domain to this add-on's
-# forwarding address -- which you only learn after the first connection --
-# so the flow is: start once, read the address below, create the CNAME, set
-# the option, restart. Until the CNAME resolves we keep running in the normal
-# http-forward mode rather than failing, so the add-on never crash-loops.
+# Without a custom domain this just runs the client. With one, it manages the
+# switch to end-to-end encryption for you: it starts in the normal
+# http-forward mode, watches DNS in the background, and the moment your CNAME
+# points at this add-on's forwarding address it swaps the client over to
+# TLS passthrough (a Let's Encrypt certificate held and terminated here). No
+# restart needed -- set the option, create the CNAME whenever, and it flips
+# itself over.
+#
+# We manage the client as a child process (not exec) so we can restart it in
+# place; forward the stop signal so the add-on shuts down cleanly.
 # ---------------------------------------------------------------------------
+set +e
+
 ADDR_FILE=/data/forwarding_address
 OPENPORT_LOG=/data/.openport/openport.log
+CLIENT_PID=""
+SLEEP_PID=""
 
-# first non-empty field of getent (the resolved IP), or empty
+stop() {
+    trap - TERM INT
+    [ -n "${SLEEP_PID}" ] && kill "${SLEEP_PID}" 2>/dev/null
+    [ -n "${CLIENT_PID}" ] && kill "${CLIENT_PID}" 2>/dev/null
+    exit 0
+}
+trap stop TERM INT
+
+# sleep that returns immediately when the add-on is asked to stop
+poll_sleep() {
+    sleep "$1" &
+    SLEEP_PID=$!
+    wait "${SLEEP_PID}" 2>/dev/null
+    SLEEP_PID=""
+}
+
+start_client() {
+    openport "${ARGS[@]}" "$@" "${SERVER_ARGS[@]}" "${VERBOSE_ARGS[@]}" &
+    CLIENT_PID=$!
+}
+
+# The openport forwarding address (abcd.u...openport.io) from the client log,
+# also persisted to /data so a later start knows it before connecting.
+read_address() {
+    local a=""
+    [ -f "${ADDR_FILE}" ] && a="$(cat "${ADDR_FILE}")"
+    if [ -z "${a}" ] && [ -f "${OPENPORT_LOG}" ]; then
+        a="$(grep -oE '[a-z0-9]+\.u\.[a-z0-9.]*openport\.(io|xyz)' "${OPENPORT_LOG}" 2>/dev/null | tail -1)"
+        [ -n "${a}" ] && echo "${a}" > "${ADDR_FILE}"
+    fi
+    echo "${a}"
+}
+
+# resolved IP for a name (follows CNAME); empty if it does not resolve yet
 resolve_ip() {
     getent hosts "$1" 2>/dev/null | awk '{print $1; exit}'
 }
 
-# Persist the forwarding address the client logs, so the next start can
-# verify the CNAME against it. Runs in the background and exits once found.
-# When a custom domain is set but not yet routable, it also prints the exact
-# CNAME line once the address is known.
-capture_address() {
-    local want_domain="$1" a
-    for _ in $(seq 1 90); do
-        if [ -f "${OPENPORT_LOG}" ]; then
-            a="$(grep -oE '[a-z0-9]+\.u\.[a-z0-9.]*openport\.(io|xyz)' "${OPENPORT_LOG}" 2>/dev/null | tail -1)"
-            if [ -n "${a}" ]; then
-                echo "${a}" > "${ADDR_FILE}"
-                if [ -n "${want_domain}" ]; then
-                    bashio::log.info "-----------------------------------------------------------------"
-                    bashio::log.info "To finish enabling your custom domain ${want_domain}:"
-                    bashio::log.info "  1. Create this DNS record at your domain provider:"
-                    bashio::log.info "       ${want_domain}.   CNAME   ${a}."
-                    bashio::log.info "  2. Wait a few minutes for it to propagate."
-                    bashio::log.info "  3. Restart this add-on to request a Let's Encrypt certificate."
-                    bashio::log.info "-----------------------------------------------------------------"
-                fi
-                return
-            fi
-        fi
-        sleep 2
-    done
+# does the custom domain now point at our forwarding address?
+cname_ready() {
+    local addr="$1" dip aip
+    [ -n "${addr}" ] || return 1
+    dip="$(resolve_ip "${CUSTOM_DOMAIN}")"
+    aip="$(resolve_ip "${addr}")"
+    [ -n "${dip}" ] && [ "${dip}" = "${aip}" ]
 }
 
-PASSTHROUGH=false
-CUSTOM_DOMAIN=""
-if bashio::config.has_value 'custom_domain'; then
-    CUSTOM_DOMAIN="$(bashio::config 'custom_domain')"
-    STORED_ADDR=""
-    [ -f "${ADDR_FILE}" ] && STORED_ADDR="$(cat "${ADDR_FILE}")"
-
-    if [ -n "${STORED_ADDR}" ]; then
-        DOMAIN_IP="$(resolve_ip "${CUSTOM_DOMAIN}")"
-        ADDR_IP="$(resolve_ip "${STORED_ADDR}")"
-        if [ -n "${DOMAIN_IP}" ] && [ "${DOMAIN_IP}" = "${ADDR_IP}" ]; then
-            PASSTHROUGH=true
-        fi
-    fi
-
-    if [ "${PASSTHROUGH}" = true ]; then
-        ARGS+=(--tls-passthrough --domain "${CUSTOM_DOMAIN}")
-        bashio::log.info "Custom domain ${CUSTOM_DOMAIN} is routable."
-        bashio::log.info "Serving HTTPS with a Let's Encrypt certificate that terminates inside this add-on."
-        bashio::log.info "End-to-end encrypted: the openport servers cannot read your traffic."
-    else
-        bashio::log.warning "-----------------------------------------------------------------"
-        bashio::log.warning "Custom domain ${CUSTOM_DOMAIN} is set but not routable yet."
-        if [ -n "${STORED_ADDR}" ]; then
-            bashio::log.warning "Create this DNS record, wait for it to propagate, then restart:"
-            bashio::log.warning "    ${CUSTOM_DOMAIN}.   CNAME   ${STORED_ADDR}."
-        else
-            bashio::log.warning "The add-on's forwarding address will be printed below shortly;"
-            bashio::log.warning "create a CNAME from ${CUSTOM_DOMAIN} to it, then restart."
-        fi
-        bashio::log.warning "Running in standard mode (openport-terminated TLS) until then."
-        bashio::log.warning "-----------------------------------------------------------------"
-    fi
-fi
-
-# Keep the forwarding address current for the next start; when a domain is
-# set but not yet verified, also print the CNAME instructions once known.
-if [ "${PASSTHROUGH}" = true ]; then
-    capture_address "" &
-else
-    capture_address "${CUSTOM_DOMAIN}" &
-fi
-
-if [ "${PASSTHROUGH}" = true ]; then
-    bashio::log.info "Starting the openport tunnel for https://${CUSTOM_DOMAIN} (local port ${PORT})..."
-else
+# ---- No custom domain: plain http-forward, nothing to supervise. ----------
+if [ -z "${CUSTOM_DOMAIN}" ]; then
     bashio::log.info "Starting the openport tunnel to localhost:${PORT}..."
     bashio::log.info "Your public address will appear in the log below (https://<xxxxx>.u.openport.io)."
+    start_client
+    wait "${CLIENT_PID}"
+    exit $?
 fi
 
-exec openport "${ARGS[@]}" "${SERVER_ARGS[@]}" "${VERBOSE_ARGS[@]}"
+# ---- Custom domain already routable at startup: go straight to passthrough.
+if cname_ready "$(read_address)"; then
+    bashio::log.info "Custom domain ${CUSTOM_DOMAIN} is routable."
+    bashio::log.info "Serving HTTPS with a Let's Encrypt certificate that terminates inside this add-on."
+    bashio::log.info "End-to-end encrypted: the openport servers cannot read your traffic."
+    ARGS+=(--tls-passthrough --domain "${CUSTOM_DOMAIN}")
+    start_client
+    wait "${CLIENT_PID}"
+    exit $?
+fi
+
+# ---- Custom domain set but not routable yet: run normally and wait. --------
+bashio::log.info "Custom domain ${CUSTOM_DOMAIN} is configured but not routable yet."
+bashio::log.info "Starting in standard mode and watching DNS; will switch automatically."
+start_client
+
+announced=false
+while true; do
+    # Keep the tunnel up if the client exited for any reason.
+    if ! kill -0 "${CLIENT_PID}" 2>/dev/null; then
+        start_client
+    fi
+
+    ADDR="$(read_address)"
+
+    if [ -n "${ADDR}" ] && [ "${announced}" = false ]; then
+        bashio::log.info "-----------------------------------------------------------------"
+        bashio::log.info "To enable your custom domain ${CUSTOM_DOMAIN} (end-to-end encryption):"
+        bashio::log.info "  Create this DNS record at your domain provider:"
+        bashio::log.info "      ${CUSTOM_DOMAIN}.   CNAME   ${ADDR}."
+        bashio::log.info "  No restart needed -- this add-on will switch over automatically"
+        bashio::log.info "  within a minute of the record propagating."
+        bashio::log.info "-----------------------------------------------------------------"
+        announced=true
+    fi
+
+    if cname_ready "${ADDR}"; then
+        bashio::log.info "Detected ${CUSTOM_DOMAIN} -> ${ADDR}. Switching to end-to-end encryption..."
+        kill "${CLIENT_PID}" 2>/dev/null
+        wait "${CLIENT_PID}" 2>/dev/null
+        ARGS+=(--tls-passthrough --domain "${CUSTOM_DOMAIN}")
+        start_client
+        bashio::log.info "Now serving https://${CUSTOM_DOMAIN} with a Let's Encrypt certificate held by this add-on."
+        break
+    fi
+
+    poll_sleep 20
+done
+
+wait "${CLIENT_PID}"
+exit $?

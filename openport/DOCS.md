@@ -130,39 +130,42 @@ held **by this add-on**. The openport servers route your domain's traffic by
 name without decrypting it, so they never see your traffic or your
 certificate's private key.
 
-Because the certificate is tied to your domain, and your domain must point at
-this add-on's forwarding address, the setup takes one round trip:
+Your domain has to point at this add-on's forwarding address, which you only
+learn once the add-on is running — so the add-on guides you and switches
+over on its own, no restart required:
 
-1. **Start the add-on once** with `custom_domain` still empty (or already set
-   — either works). Open the log and note your forwarding address:
-
-   ```
-   Now forwarding remote address abcde.u.openport.io to localhost
-   ```
-
-2. **Create a CNAME record** at your DNS provider, pointing your domain at
-   that address (note the trailing dot where your provider expects one):
+1. **Set `custom_domain`** to your domain (e.g. `ha.example.com`) and start
+   the add-on. It begins on the standard `u.openport.io` address and, once
+   connected, prints your forwarding address and the exact DNS record to
+   create:
 
    ```
-   ha.example.com.   CNAME   abcde.u.openport.io.
+   To enable your custom domain ha.example.com (end-to-end encryption):
+     Create this DNS record at your domain provider:
+         ha.example.com.   CNAME   abcde.u.openport.io.
+     No restart needed -- this add-on will switch over automatically
+     within a minute of the record propagating.
    ```
 
-3. **Set the `custom_domain` option** to `ha.example.com` and **restart** the
-   add-on. Once the CNAME resolves, the add-on requests a Let's Encrypt
-   certificate (validated through the tunnel — no extra ports or DNS
-   credentials needed) and logs:
+2. **Create that CNAME record** at your DNS provider (note the trailing dot
+   where your provider expects one). Your Home Assistant stays reachable on
+   the standard address the whole time.
+
+3. **Wait.** The add-on watches DNS in the background. Within about a minute
+   of the record propagating, it requests a Let's Encrypt certificate
+   (validated through the tunnel — no extra ports or DNS credentials) and
+   switches over automatically:
 
    ```
-   Custom domain ha.example.com is routable.
-   Serving HTTPS with a Let's Encrypt certificate that terminates inside this add-on.
+   Detected ha.example.com -> abcde.u.openport.io. Switching to end-to-end encryption...
+   Now serving https://ha.example.com with a Let's Encrypt certificate held by this add-on.
    ```
-
-   Until the CNAME resolves, the add-on keeps running on the standard
-   `u.openport.io` address and prints the exact record to create, so it never
-   fails while you wait for DNS. Just restart after the record propagates.
 
 4. Set **Settings → System → Network → External URL** to
    `https://ha.example.com` and point the companion apps there.
+
+If the record is already in place when the add-on starts (for example after
+a reboot), it goes straight to your domain with no standard-address phase.
 
 Notes for this mode:
 
