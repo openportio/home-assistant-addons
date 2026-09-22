@@ -140,11 +140,10 @@ over on its own, no restart required:
    create:
 
    ```
-   To enable your custom domain ha.example.com (end-to-end encryption):
-     Create this DNS record at your domain provider:
-         ha.example.com.   CNAME   abcde.u.openport.io.
-     No restart needed -- this add-on will switch over automatically
-     within a minute of the record propagating.
+   To serve https://ha.example.com with end-to-end encryption, create this DNS record:
+       ha.example.com.   CNAME   abcde.u.openport.io.
+   No restart needed: this will switch over automatically within a
+   minute of the record propagating.
    ```
 
 2. **Create that CNAME record** at your DNS provider (note the trailing dot
@@ -157,15 +156,15 @@ over on its own, no restart required:
    switches over automatically:
 
    ```
-   Detected ha.example.com -> abcde.u.openport.io. Switching to end-to-end encryption...
-   Now serving https://ha.example.com with a Let's Encrypt certificate held by this add-on.
+   Detected ha.example.com -> abcde.u.openport.io. Reconnecting to enable end-to-end encryption...
+   Now forwarding https://ha.example.com to localhost:8123 (TLS terminates on this machine)
    ```
 
 4. Set **Settings → System → Network → External URL** to
    `https://ha.example.com` and point the companion apps there.
 
 If the record is already in place when the add-on starts (for example after
-a reboot), it goes straight to your domain with no standard-address phase.
+a reboot), it switches within a minute of connecting.
 
 Notes for this mode:
 
