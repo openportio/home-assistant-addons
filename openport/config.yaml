@@ -1,5 +1,5 @@
 name: Openport
-version: "1.0.1"
+version: "1.1.0"
 slug: openport
 description: Reach your Home Assistant from anywhere via an openport.io https tunnel
 url: https://openport.io
@@ -25,6 +25,7 @@ schema:
   key_name: str
   keep_alive_seconds: int(10,3600)
   use_websocket_transport: bool
+  custom_domain: str?
   ip_link_protection: bool?
   server: url?
   verbose: bool

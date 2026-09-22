@@ -20,6 +20,14 @@ configuration:
     description: >-
       Connect to the openport servers over WebSockets (port 443) instead of
       SSH. Useful on networks that block outbound SSH.
+  custom_domain:
+    name: Custom domain (end-to-end encryption)
+    description: >-
+      Your own domain, e.g. ha.example.com. When set, this add-on terminates
+      TLS itself with a Let's Encrypt certificate, so openport cannot read
+      your traffic. Requires a CNAME from your domain to the add-on's
+      forwarding address; see the add-on documentation and log. Leave empty
+      to use the standard openport.io address.
   ip_link_protection:
     name: IP link protection
     description: >-

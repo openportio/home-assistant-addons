@@ -2,6 +2,10 @@ ARG BUILD_FROM
 FROM $BUILD_FROM
 
 ARG BUILD_ARCH
+# The custom_domain option (end-to-end TLS) needs the client's
+# --tls-passthrough support. Bump this to the first release that ships it
+# before merging custom_domain to the published add-on, or that option will
+# fail on an older binary.
 ARG OPENPORT_VERSION=2.2.3
 
 RUN apt-get update \
