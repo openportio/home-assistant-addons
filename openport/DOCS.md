@@ -74,6 +74,27 @@ Interval between keep-alive messages on the tunnel. Default `120`.
 Connect to the openport servers over the WebSocket protocol (port 443)
 instead of SSH. Useful on networks that block outbound SSH. Default `false`.
 
+### `custom_domain` (optional)
+
+Your own domain, e.g. `ha.example.com`. When set, the add-on serves HTTPS
+for that domain with its own Let's Encrypt certificate and **terminates TLS
+inside the add-on**, so the openport servers only relay encrypted bytes they
+cannot read. Leave it empty to use the standard `https://<xxxxx>.u.openport.io`
+address (where TLS terminates on the openport servers). See
+[Your own domain (end-to-end encryption)](#your-own-domain-end-to-end-encryption)
+for the setup steps.
+
+### `certfile` / `keyfile` (optional)
+
+Bring your own certificate for the custom domain instead of the automatic
+Let's Encrypt one: the PEM certificate chain and its private key. Bare
+filenames (e.g. `fullchain.pem` and `privkey.pem`) are looked up in `/ssl`,
+the same shared folder the other add-ons use; absolute paths are taken
+as-is. Both must be set together, and they only apply when `custom_domain`
+is set. See
+[Bring your own certificate](#bring-your-own-certificate)
+for details.
+
 ### `ip_link_protection` (optional)
 
 When enabled, visitors must first click a secret link before they can reach
@@ -99,31 +120,119 @@ Enable debug logging of the openport client.
 
 Be aware of what the tunnel can and cannot see:
 
-- The public `https://<xxxxx>.u.openport.io` endpoint terminates TLS on the
-  openport servers. The last hop to your Home Assistant travels through the
-  encrypted tunnel, but the openport server sits in the middle of the
+- On the default `https://<xxxxx>.u.openport.io` address, TLS terminates on
+  the openport servers. The last hop to your Home Assistant travels through
+  the encrypted tunnel, but the openport server sits in the middle of the
   connection and could technically read the traffic, including login
   credentials. Every hosted tunnel that presents a valid certificate on your
   behalf (Home Assistant Cloud, Cloudflare Tunnel) is in the same position;
   it is inherent to how these services work, not specific to openport.
+- With a [custom domain](#your-own-domain-end-to-end-encryption), TLS instead
+  terminates inside this add-on, so the openport servers only relay encrypted
+  bytes they cannot read. This is the end-to-end option.
 - The [openport client is open source](https://github.com/openportio/openport-go).
   The server side is not.
 
-If you want end-to-end encryption, where the tunnel only relays bytes it
-cannot decrypt, the openport client also supports plain port forwarding:
+## Your own domain (end-to-end encryption)
 
-1. Configure Home Assistant itself for TLS (`http.ssl_certificate` and
-   `http.ssl_key` in `configuration.yaml`, or the NGINX SSL proxy app).
-2. Forward that TLS port with the
-   [standalone openport client](https://openport.io/download) in its default
-   mode (without `--http-forward`). You then connect to an address like
-   `openport.io:<port>`, and only your Home Assistant can decrypt the
-   traffic. Expect a certificate warning unless your certificate covers the
-   name you connect to.
+Set the `custom_domain` option to serve Home Assistant on your own domain
+(e.g. `ha.example.com`) with a certificate that is held **by this add-on**:
+by default a Let's Encrypt certificate it obtains and renews itself, or
+[your own certificate](#bring-your-own-certificate) if you supply one. The
+openport servers route your domain's traffic by name without decrypting it,
+so they never see your traffic or your certificate's private key.
 
-This add-on always uses http-forward mode: that is what provides the stable
-`u.openport.io` address and working WebSockets without any TLS setup on your
-side.
+Your domain has to point at this add-on's forwarding address, which you only
+learn once the add-on is running — so the add-on guides you and switches
+over on its own, no restart required:
+
+1. **Set `custom_domain`** to your domain (e.g. `ha.example.com`) and start
+   the add-on. It begins on the standard `u.openport.io` address and, once
+   connected, prints your forwarding address and the exact DNS record to
+   create:
+
+   ```
+   To serve https://ha.example.com with end-to-end encryption, create this DNS record:
+       ha.example.com.   CNAME   abcde.u.openport.io.
+   No restart needed: this will switch over automatically within a
+   minute of the record propagating.
+   ```
+
+2. **Create that CNAME record** at your DNS provider (note the trailing dot
+   where your provider expects one). Your Home Assistant stays reachable on
+   the standard address the whole time.
+
+3. **Wait.** The add-on watches DNS in the background. Within about a minute
+   of the record propagating, it requests a Let's Encrypt certificate
+   (validated through the tunnel — no extra ports or DNS credentials) and
+   switches over automatically:
+
+   ```
+   Detected ha.example.com -> abcde.u.openport.io. Reconnecting to enable end-to-end encryption...
+   Now forwarding https://ha.example.com to localhost:8123 (TLS terminates on this machine)
+   ```
+
+4. Set **Settings → System → Network → External URL** to
+   `https://ha.example.com` and point the companion apps there.
+
+If the record is already in place when the add-on starts (for example after
+a reboot), it switches within a minute of connecting.
+
+Notes for this mode:
+
+- **Home Assistant must serve plain HTTP** on the `port` (the default 8123).
+  The add-on terminates TLS and forwards plain HTTP to it; do not also enable
+  TLS inside Home Assistant.
+- **You do not need the `trusted_proxies` / `use_x_forwarded_for` settings**
+  from step 4 of Setup in this mode. The trade-off is that Home Assistant
+  sees requests coming from `127.0.0.1` rather than each visitor's real IP.
+- **Harden issuance (recommended):** add a CAA record so only your own
+  Let's Encrypt account can issue for the domain, in case the CNAME ever
+  outlives this add-on:
+
+  ```
+  ha.example.com.   CAA   0 issue "letsencrypt.org"
+  ```
+
+- **Remove the CNAME when you stop using it.** A CNAME left pointing at a
+  forwarding address you no longer hold could later route your domain to
+  whoever is assigned that address.
+
+### Bring your own certificate
+
+If you already have a certificate for your domain — from the
+[Let's Encrypt add-on](https://github.com/home-assistant/addons/tree/master/letsencrypt)
+(handy for wildcard certificates via a DNS challenge), an internal CA, or a
+commercial one — set `certfile` and `keyfile` and the add-on serves it
+instead of obtaining its own:
+
+```yaml
+custom_domain: ha.example.com
+certfile: fullchain.pem
+keyfile: privkey.pem
+```
+
+Bare filenames are looked up in `/ssl`, the shared folder where the
+Let's Encrypt add-on and most others keep their certificates; absolute paths
+are taken as-is. The `certfile` must contain the full PEM chain and the
+`keyfile` its unencrypted PEM private key.
+
+Everything else works the same as the default mode: the same CNAME record is
+still required (it is what routes your domain to the tunnel), the switch-over
+is still automatic, and TLS still terminates inside this add-on. Only the
+ACME step is skipped, so the switch-over doesn't wait for a certificate to
+be issued.
+
+Notes for this mode:
+
+- **Renewals need a restart.** The certificate is loaded when the tunnel
+  starts. When the files in `/ssl` are renewed (for example by the
+  Let's Encrypt add-on), restart this add-on to pick up the new certificate.
+- The certificate is served for every name that reaches this tunnel, so make
+  sure it actually covers `custom_domain` — visitors get a certificate
+  error otherwise. A wildcard certificate covering it is fine.
+- The CAA record from the notes above should match your own issuer in this
+  mode (or can be stricter, since no automatic issuance happens here).
 
 ## Troubleshooting
 

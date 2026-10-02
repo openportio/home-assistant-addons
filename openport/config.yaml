@@ -1,5 +1,5 @@
 name: Openport
-version: "1.0.1"
+version: "1.1.0"
 slug: openport
 description: Reach your Home Assistant from anywhere via an openport.io https tunnel
 url: https://openport.io
@@ -12,6 +12,10 @@ init: false
 # The openport client forwards incoming traffic to localhost:<port>. Home
 # Assistant listens on the host network, so the add-on must share it.
 host_network: true
+# /ssl holds the user's own certificate for the custom_domain mode
+# (certfile/keyfile options), same convention as the other add-ons.
+map:
+  - ssl:ro
 options:
   key_registration_token: ""
   port: 8123
@@ -25,6 +29,9 @@ schema:
   key_name: str
   keep_alive_seconds: int(10,3600)
   use_websocket_transport: bool
+  custom_domain: str?
+  certfile: str?
+  keyfile: str?
   ip_link_protection: bool?
   server: url?
   verbose: bool

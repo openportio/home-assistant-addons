@@ -20,6 +20,28 @@ configuration:
     description: >-
       Connect to the openport servers over WebSockets (port 443) instead of
       SSH. Useful on networks that block outbound SSH.
+  custom_domain:
+    name: Custom domain (end-to-end encryption)
+    description: >-
+      Your own domain, e.g. ha.example.com. When set, this add-on terminates
+      TLS itself with a Let's Encrypt certificate (or your own, see the
+      certificate file option), so openport cannot read your traffic.
+      Requires a CNAME from your domain to the add-on's forwarding address;
+      see the add-on documentation and log. Leave empty to use the standard
+      openport.io address.
+  certfile:
+    name: Certificate file (custom domain)
+    description: >-
+      Bring your own certificate for the custom domain instead of the
+      automatic Let's Encrypt one. The PEM certificate chain, looked up in
+      /ssl unless an absolute path is given, e.g. fullchain.pem. Set the
+      private key file too. Leave empty to let the add-on obtain the
+      certificate itself.
+  keyfile:
+    name: Private key file (custom domain)
+    description: >-
+      The PEM private key belonging to the certificate file, looked up in
+      /ssl unless an absolute path is given, e.g. privkey.pem.
   ip_link_protection:
     name: IP link protection
     description: >-
