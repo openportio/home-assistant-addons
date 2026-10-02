@@ -10,7 +10,9 @@
   the exact CNAME record to create, watches DNS in the background, and
   switches to your domain automatically once the record propagates — no
   restart needed, and it never crash-loops while you wait.
-- Requires the openport client's TLS-passthrough support.
+- Openport client v2.3.0 (the first release with TLS-passthrough support),
+  now installed from the signed apt repository at https://openport.io/apt
+  instead of a bare GitHub release binary.
 
 ## 1.0.1
 
