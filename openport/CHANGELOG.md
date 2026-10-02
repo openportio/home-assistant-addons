@@ -6,6 +6,9 @@
   with a Let's Encrypt certificate that the add-on holds and terminates
   itself, so the openport servers only relay encrypted bytes they cannot
   read (end-to-end encryption).
+- Bring your own certificate for the custom domain: the `certfile` and
+  `keyfile` options serve a certificate from `/ssl` (where the Let's Encrypt
+  add-on and others keep theirs) instead of the automatic Let's Encrypt one.
 - Guided, hands-off setup: the add-on runs on the standard address, prints
   the exact CNAME record to create, watches DNS in the background, and
   switches to your domain automatically once the record propagates — no

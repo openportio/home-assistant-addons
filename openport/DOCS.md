@@ -84,6 +84,17 @@ address (where TLS terminates on the openport servers). See
 [Your own domain (end-to-end encryption)](#your-own-domain-end-to-end-encryption)
 for the setup steps.
 
+### `certfile` / `keyfile` (optional)
+
+Bring your own certificate for the custom domain instead of the automatic
+Let's Encrypt one: the PEM certificate chain and its private key. Bare
+filenames (e.g. `fullchain.pem` and `privkey.pem`) are looked up in `/ssl`,
+the same shared folder the other add-ons use; absolute paths are taken
+as-is. Both must be set together, and they only apply when `custom_domain`
+is set. See
+[Bring your own certificate](#bring-your-own-certificate)
+for details.
+
 ### `ip_link_protection` (optional)
 
 When enabled, visitors must first click a secret link before they can reach
@@ -125,10 +136,11 @@ Be aware of what the tunnel can and cannot see:
 ## Your own domain (end-to-end encryption)
 
 Set the `custom_domain` option to serve Home Assistant on your own domain
-(e.g. `ha.example.com`) with a Let's Encrypt certificate that is obtained and
-held **by this add-on**. The openport servers route your domain's traffic by
-name without decrypting it, so they never see your traffic or your
-certificate's private key.
+(e.g. `ha.example.com`) with a certificate that is held **by this add-on**:
+by default a Let's Encrypt certificate it obtains and renews itself, or
+[your own certificate](#bring-your-own-certificate) if you supply one. The
+openport servers route your domain's traffic by name without decrypting it,
+so they never see your traffic or your certificate's private key.
 
 Your domain has to point at this add-on's forwarding address, which you only
 learn once the add-on is running — so the add-on guides you and switches
@@ -185,6 +197,42 @@ Notes for this mode:
 - **Remove the CNAME when you stop using it.** A CNAME left pointing at a
   forwarding address you no longer hold could later route your domain to
   whoever is assigned that address.
+
+### Bring your own certificate
+
+If you already have a certificate for your domain — from the
+[Let's Encrypt add-on](https://github.com/home-assistant/addons/tree/master/letsencrypt)
+(handy for wildcard certificates via a DNS challenge), an internal CA, or a
+commercial one — set `certfile` and `keyfile` and the add-on serves it
+instead of obtaining its own:
+
+```yaml
+custom_domain: ha.example.com
+certfile: fullchain.pem
+keyfile: privkey.pem
+```
+
+Bare filenames are looked up in `/ssl`, the shared folder where the
+Let's Encrypt add-on and most others keep their certificates; absolute paths
+are taken as-is. The `certfile` must contain the full PEM chain and the
+`keyfile` its unencrypted PEM private key.
+
+Everything else works the same as the default mode: the same CNAME record is
+still required (it is what routes your domain to the tunnel), the switch-over
+is still automatic, and TLS still terminates inside this add-on. Only the
+ACME step is skipped, so the switch-over doesn't wait for a certificate to
+be issued.
+
+Notes for this mode:
+
+- **Renewals need a restart.** The certificate is loaded when the tunnel
+  starts. When the files in `/ssl` are renewed (for example by the
+  Let's Encrypt add-on), restart this add-on to pick up the new certificate.
+- The certificate is served for every name that reaches this tunnel, so make
+  sure it actually covers `custom_domain` — visitors get a certificate
+  error otherwise. A wildcard certificate covering it is fine.
+- The CAA record from the notes above should match your own issuer in this
+  mode (or can be stricter, since no automatic issuance happens here).
 
 ## Troubleshooting
 

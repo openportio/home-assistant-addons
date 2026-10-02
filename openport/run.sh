@@ -69,12 +69,45 @@ fi
 
 # Custom domain: end-to-end encryption on your own domain. The client
 # handles the setup itself -- it starts on the standard address, prints the
-# CNAME record to create, watches DNS, and switches to a Let's Encrypt
-# certificate it terminates here the moment the record resolves. No restart
-# needed. See the add-on documentation.
+# CNAME record to create, watches DNS, and switches to your domain the
+# moment the record resolves. No restart needed. The certificate is either
+# obtained from Let's Encrypt by the client (the default) or supplied by the
+# user via certfile/keyfile under /ssl. See the add-on documentation.
+if bashio::config.has_value 'certfile' || bashio::config.has_value 'keyfile'; then
+    if ! bashio::config.has_value 'custom_domain'; then
+        bashio::log.fatal "certfile/keyfile only make sense together with custom_domain:"
+        bashio::log.fatal "on the standard openport.io address the certificate is managed for you."
+        bashio::exit.nok
+    fi
+    if ! bashio::config.has_value 'certfile' || ! bashio::config.has_value 'keyfile'; then
+        bashio::log.fatal "certfile and keyfile must be set together."
+        bashio::exit.nok
+    fi
+fi
+
 if bashio::config.has_value 'custom_domain'; then
     ARGS+=(--tls-passthrough --domain "$(bashio::config 'custom_domain')")
-    bashio::log.info "Custom domain configured; watch this log for the DNS record to create."
+    if bashio::config.has_value 'certfile'; then
+        CERTFILE="$(bashio::config 'certfile')"
+        KEYFILE="$(bashio::config 'keyfile')"
+        # Bare filenames are looked up in /ssl, like the other add-ons do;
+        # an absolute path is taken as-is.
+        [ "${CERTFILE#/}" = "${CERTFILE}" ] && CERTFILE="/ssl/${CERTFILE}"
+        [ "${KEYFILE#/}" = "${KEYFILE}" ] && KEYFILE="/ssl/${KEYFILE}"
+        if [ ! -f "${CERTFILE}" ]; then
+            bashio::log.fatal "Certificate file ${CERTFILE} not found."
+            bashio::exit.nok
+        fi
+        if [ ! -f "${KEYFILE}" ]; then
+            bashio::log.fatal "Private key file ${KEYFILE} not found."
+            bashio::exit.nok
+        fi
+        ARGS+=(--tls-cert "${CERTFILE}" --tls-key "${KEYFILE}")
+        bashio::log.info "Custom domain configured with your own certificate (${CERTFILE});"
+        bashio::log.info "watch this log for the DNS record to create."
+    else
+        bashio::log.info "Custom domain configured; watch this log for the DNS record to create."
+    fi
 fi
 
 bashio::log.info "Starting the openport tunnel to localhost:${PORT}..."
