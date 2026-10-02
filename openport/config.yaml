@@ -33,5 +33,4 @@ schema:
   certfile: str?
   keyfile: str?
   ip_link_protection: bool?
-  server: url?
   verbose: bool

@@ -27,9 +27,15 @@ if bashio::var.is_empty "${TOKEN}"; then
     bashio::exit.nok
 fi
 
+# Dev/test override, deliberately not an add-on option: users should never
+# point at another openport server, and even unset optional schema keys show
+# up in the configuration UI. To test against e.g. https://test.openport.io,
+# write that URL to /data/server_override inside the container and restart.
 SERVER_ARGS=()
-if bashio::config.has_value 'server'; then
-    SERVER_ARGS+=(--server "$(bashio::config 'server')")
+if [ -s /data/server_override ]; then
+    SERVER_OVERRIDE="$(cat /data/server_override)"
+    SERVER_ARGS+=(--server "${SERVER_OVERRIDE}")
+    bashio::log.warning "Using openport server override: ${SERVER_OVERRIDE}"
 fi
 
 VERBOSE_ARGS=()
