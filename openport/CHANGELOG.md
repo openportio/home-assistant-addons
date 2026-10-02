@@ -16,6 +16,10 @@
 - Openport client v2.3.0 (the first release with TLS-passthrough support),
   now installed from the signed apt repository at https://openport.io/apt
   instead of a bare GitHub release binary.
+- The `server` option is removed from the configuration schema: it was a
+  development knob, but it showed up in everyone's configuration UI. If you
+  had it set, remove it from the add-on configuration before updating.
+  (Developers: write the URL to `/data/server_override` instead.)
 
 ## 1.0.1
 
